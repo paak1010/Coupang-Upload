@@ -15,7 +15,7 @@ with st.sidebar:
     st.caption("✅ ME코드별 통합 분석 (단일 LOT 유지 / 다수 공백)")
     st.caption("Developed by Jay")
 
-st.title("쿠팡 수주업로드 자동 입력 대시보드 (0개 조건 제거 버전)")
+st.title("쿠팡 수주업로드 자동 입력 시스템")
 st.markdown("Mentholatum : Moving The Heart")
 
 if uploaded_file:
