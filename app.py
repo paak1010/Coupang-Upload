@@ -60,11 +60,6 @@ if uploaded_file:
         df_inv['유효일자'] = pd.to_datetime(df_inv['유효일자'], errors='coerce').dt.normalize()
         df_inv['유효일자_보존'] = df_inv['유효일자'].fillna(pd.Timestamp('2099-12-31'))
 
-        # 불량 재고 걸러내기
-        idx_pmm = (df_inv['상품'] == 'ME00621PMM') & (df_inv['유효일자'].dt.year != 2028)
-        idx_oc2 = (df_inv['상품'] == 'ME90621OC2') & (~df_inv['화주LOT'].fillna('').astype(str).str.contains('분리배출'))
-        df_inv_valid = df_inv[~(idx_pmm | idx_oc2)].copy()
-
         # 재고 그룹핑 (유효기간 촉박순 정렬 - FEFO)
         if not df_inv_valid.empty:
             df_inv_sorted = df_inv_valid.sort_values(by=['상품', '유효일자_보존', '환산'], ascending=[True, True, False])
