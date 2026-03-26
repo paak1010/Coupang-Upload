@@ -60,6 +60,9 @@ if uploaded_file:
         df_inv['유효일자'] = pd.to_datetime(df_inv['유효일자'], errors='coerce').dt.normalize()
         df_inv['유효일자_보존'] = df_inv['유효일자'].fillna(pd.Timestamp('2099-12-31'))
 
+        # OC2, PMM 조건 등 특정 상품 제한 제거 -> 모든 유효 재고 사용
+        df_inv_valid = df_inv.copy()
+
         # 재고 그룹핑 (유효기간 촉박순 정렬 - FEFO)
         if not df_inv_valid.empty:
             df_inv_sorted = df_inv_valid.sort_values(by=['상품', '유효일자_보존', '환산'], ascending=[True, True, False])
@@ -139,7 +142,7 @@ if uploaded_file:
             df_order['발주원가'] = pd.to_numeric(df_order['발주원가'], errors='coerce').fillna(0)
             df_order['합계'] = df_order['수량'] * df_order['발주원가']
 
-        st.success("✅ [쿠팡 찐퉁 모드] 유효기한 필터링 및 1LOT 원칙 매핑 완벽 적용!")
+        st.success("✅ [쿠팡 찐퉁 모드] 특정 상품 조건 해제 및 1LOT 원칙 매핑 완벽 적용!")
 
         # 결과 확인 미리보기에 찐퉁 양식 컬럼 추가
         st.subheader("📊 작업 결과 미리보기")
