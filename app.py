@@ -11,6 +11,7 @@ with st.sidebar:
     st.header("⚙️ 작업 설정")
     uploaded_file = st.file_uploader("쿠팡 발주 엑셀 업로드", type=['xlsx'])
     st.markdown("---")
+    st.caption("LOT 공백 참조")
     st.caption("Developed by Jay")
 
 st.title("🚀 쿠팡 수주업로드 자동 입력 시스템")
