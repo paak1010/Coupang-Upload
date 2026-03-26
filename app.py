@@ -13,7 +13,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption("✅ 0개 주문 포함 모든 행 정직하게 처리")
     st.caption("✅ ME코드별 통합 분석 (단일 LOT 유지 / 다수 공백)")
-    st.caption("Developed by Jay (Ace Mode 🚀)")
+    st.caption("Developed by Jay")
 
 st.title("쿠팡 수주업로드 자동 입력 대시보드 (0개 조건 제거 버전)")
 st.markdown("Mentholatum : Moving The Heart")
