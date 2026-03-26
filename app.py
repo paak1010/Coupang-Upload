@@ -18,13 +18,13 @@ with st.sidebar:
     st.markdown("---")
     st.caption("💡 1발주 = 1LOT 원칙 (부분/분할 할당 불가)")
     st.caption("💡 쿠팡 유효기한(커트라인) 완벽 필터링 적용")
-    st.caption("💡 금일재고 / 잔량 / 입고가능여부 자동 산출")
+    st.caption("💡 다중 LOT 보유 시 블라인드(공백) 및 최소유효일자 통일")
     st.caption("Developed by Jay (Ace Mode 🚀)")
 
 # ==========================================
 # 메인 화면 디자인
 # ==========================================
-st.title("쿠팡 수주업로드 자동 입력 대시보드 (찐퉁 모드)")
+st.title("쿠팡 수주업로드 자동 입력 대시보드 (찐퉁 모드 최종)")
 st.markdown("Mentholatum : Moving The Heart")
 
 if uploaded_file:
@@ -42,7 +42,7 @@ if uploaded_file:
         # 찐퉁 엑셀 포맷을 위한 필수 열 세팅
         for col in ['LOT', '유효일자', '할당상태', '유효일자 입고가능', '금일재고', '잔량']:
             if col not in df_order.columns:
-                df_order[col] = ''
+                df_order[col] = None
 
         # [핵심] 쿠팡 유효기한 날짜 연산용 임시 보존 열 생성
         if '쿠팡 유효기한' in df_order.columns:
@@ -60,28 +60,27 @@ if uploaded_file:
         df_inv['유효일자'] = pd.to_datetime(df_inv['유효일자'], errors='coerce').dt.normalize()
         df_inv['유효일자_보존'] = df_inv['유효일자'].fillna(pd.Timestamp('2099-12-31'))
 
-        # OC2, PMM 조건 등 특정 상품 제한 제거 -> 모든 유효 재고 사용
-        df_inv_valid = df_inv.copy()
-
         # 재고 그룹핑 (유효기간 촉박순 정렬 - FEFO)
-        if not df_inv_valid.empty:
-            df_inv_sorted = df_inv_valid.sort_values(by=['상품', '유효일자_보존', '환산'], ascending=[True, True, False])
+        if not df_inv.empty:
+            df_inv_sorted = df_inv.sort_values(by=['상품', '유효일자_보존', '환산'], ascending=[True, True, False])
             inv_grouped = df_inv_sorted.groupby(['상품', '유효일자_보존', '화주LOT']).agg({'환산': 'sum', '유효일자': 'first'}).reset_index()
         else:
             inv_grouped = pd.DataFrame(columns=['상품', '유효일자_보존', '화주LOT', '환산', '유효일자'])
 
         # 찐퉁 모드 할당 로직
-        with st.spinner('쿠팡 납품 커트라인 검사 및 최적 LOT 매핑 중... 🚀'):
+        with st.spinner('쿠팡 납품 커트라인 검사 및 다중 LOT 블라인드 처리 중... 🚀'):
             for i, row in df_order.iterrows():
                 mecode = row['MECODE']
                 order_qty = row['수량']
-                limit_date = row['쿠팡 유효기한_보존']  # 쿠팡 요구 최소 유통기한
+                limit_date = row['쿠팡 유효기한_보존']
                 
                 if pd.isna(mecode) or str(mecode) == 'NAN' or order_qty <= 0:
                     df_order.at[i, '할당상태'] = "제외"
                     continue
                 
-                available_inv_idx = inv_grouped[(inv_grouped['상품'] == mecode) & (inv_grouped['환산'] > 0)].index
+                # 할당 시점 기준, 해당 상품의 '재고가 남아있는(환산>0)' 모든 LOT 조회
+                available_inv_df = inv_grouped[(inv_grouped['상품'] == mecode) & (inv_grouped['환산'] > 0)]
+                available_inv_idx = available_inv_df.index
                 
                 if len(available_inv_idx) == 0:
                     df_order.at[i, 'LOT'] = '재고없음'
@@ -90,6 +89,10 @@ if uploaded_file:
                     df_order.at[i, '유효일자 입고가능'] = False
                     continue
 
+                # 🔥 [추가된 로직] 환산 재고가 남아있는 유니크 LOT 개수와 가장 짧은 유효일자 파악
+                unique_lots_count = available_inv_df['화주LOT'].nunique()
+                shortest_valid_date = available_inv_df['유효일자'].min()
+                
                 is_allocated = False
 
                 for idx in available_inv_idx:
@@ -100,34 +103,41 @@ if uploaded_file:
                     if inv_qty < order_qty:
                         continue
                         
-                    # [조건 2] 쿠팡 유효기한 필터링: 재고 유효기간이 쿠팡 커트라인보다 길거나 같아야 함
+                    # [조건 2] 쿠팡 유효기한 커트라인 통과해야 함
                     if pd.notna(limit_date) and pd.notna(inv_date):
                         if inv_date < limit_date:
-                            continue # 쿠팡 기준 미달! 할당하지 않고 다음으로 임박한 재고로 넘어감
+                            continue 
                             
-                    # 모든 조건을 통과한 최적의 LOT 발견!
-                    lot_str = inv_grouped.at[idx, '화주LOT']
-                    date_str = inv_date.strftime('%Y-%m-%d') if pd.notna(inv_date) else '일자없음'
+                    # 할당 확정 (실제 차감 처리)
+                    actual_lot_str = inv_grouped.at[idx, '화주LOT']
+                    actual_date_str = inv_date.strftime('%Y-%m-%d') if pd.notna(inv_date) else '일자없음'
                     
                     before_qty = inv_qty
                     after_qty = inv_qty - order_qty
                     
-                    # 마스터 재고 차감
+                    # 마스터 재고 실시간 차감
                     inv_grouped.at[idx, '환산'] = after_qty
                     
-                    # 찐퉁 폼에 맞춰 데이터프레임 기록
-                    df_order.at[i, 'LOT'] = lot_str
-                    df_order.at[i, '유효일자'] = date_str
+                    # 🔥 [핵심 기록 로직] 다중 LOT가 남아있다면 공백 처리 후 최단 날짜 적용
+                    if unique_lots_count > 1:
+                        display_lot = None  # 엑셀 기록 시 완전 빈칸(NaN)으로 남도록 None 처리
+                        display_date = shortest_valid_date.strftime('%Y-%m-%d') if pd.notna(shortest_valid_date) else '일자없음'
+                    else:
+                        display_lot = actual_lot_str
+                        display_date = actual_date_str
+                    
+                    # 데이터프레임 기록
+                    df_order.at[i, 'LOT'] = display_lot
+                    df_order.at[i, '유효일자'] = display_date
                     df_order.at[i, '할당상태'] = "정상할당"
-                    df_order.at[i, '유효일자 입고가능'] = True  # 찐퉁처럼 True 값 반환
-                    df_order.at[i, '금일재고'] = int(before_qty)  # 차감 전 재고 기록
-                    df_order.at[i, '잔량'] = int(after_qty)      # 차감 후 재고 기록
+                    df_order.at[i, '유효일자 입고가능'] = True
+                    df_order.at[i, '금일재고'] = int(before_qty)
+                    df_order.at[i, '잔량'] = int(after_qty)
                     
                     is_allocated = True
                     break
 
                 if not is_allocated:
-                    # 수량이 안 맞거나, 남은 재고가 전부 쿠팡 유효기한 미달일 경우
                     df_order.at[i, 'LOT'] = '조건충족재고없음'
                     df_order.at[i, '유효일자'] = '조건충족재고없음'
                     df_order.at[i, '할당상태'] = '수량부족 or 기한미달'
@@ -142,9 +152,9 @@ if uploaded_file:
             df_order['발주원가'] = pd.to_numeric(df_order['발주원가'], errors='coerce').fillna(0)
             df_order['합계'] = df_order['수량'] * df_order['발주원가']
 
-        st.success("✅ [쿠팡 찐퉁 모드] 특정 상품 조건 해제 및 1LOT 원칙 매핑 완벽 적용!")
+        st.success("✅ [쿠팡 찐퉁 모드 최종판] 다중 LOT 블라인드 처리 및 선입선출 최단일자 표기 완벽 적용!")
 
-        # 결과 확인 미리보기에 찐퉁 양식 컬럼 추가
+        # 결과 확인
         st.subheader("📊 작업 결과 미리보기")
         preview_cols = ['MECODE', '수량', '쿠팡 유효기한', 'LOT', '유효일자', '유효일자 입고가능', '금일재고', '잔량', '할당상태']
         st.dataframe(df_order[[c for c in preview_cols if c in df_order.columns]].head(20), use_container_width=True)
@@ -161,9 +171,9 @@ if uploaded_file:
             df_inv_left.to_excel(writer, index=False, sheet_name='작업후_잔여재고현황')
             
         st.download_button(
-            label="💾 쿠팡 최종 완성 엑셀 파일 다운로드 (찐퉁 버전)",
+            label="💾 쿠팡 최종 완성 엑셀 파일 다운로드 (찐퉁 마스터 버전)",
             data=buffer.getvalue(),
-            file_name="쿠팡_수주업로드_자동할당완료(찐퉁).xlsx",
+            file_name="쿠팡_수주업로드_자동할당완료_Master.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary"
         )
