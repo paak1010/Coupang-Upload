@@ -116,7 +116,7 @@ if uploaded_file:
         st.download_button(
             label="💾 쿠팡 최종 엑셀 다운로드",
             data=buffer.getvalue(),
-            file_name="쿠팡_수주업로드_전체행반영.xlsx",
+            file_name="쿠팡_수주업로드_NEW.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary"
         )
